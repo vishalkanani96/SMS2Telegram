@@ -1,4 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <full-backup-content>
-    <include domain="sharedpref" path="." />
+    <!-- Exclude all SharedPreferences as they contain sensitive data (API tokens, chat IDs, SMS content) -->
+    <!-- Encryption-related preferences are managed by Android Keystore and don't need backup -->
+    <exclude domain="sharedpref" path="." />
 </full-backup-content>

@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<network-security-config>
+    <!-- Enforce HTTPS for all domains -->
+    <domain-config cleartextTrafficPermitted="false">
+        <!-- Telegram API requires HTTPS -->
+        <domain includeSubdomains="true">api.telegram.org</domain>
+    </domain-config>
+    
+    <!-- Block all other cleartext traffic -->
+    <domain-config cleartextTrafficPermitted="false">
+        <domain includeSubdomains="true">.</domain>
+    </domain-config>
+</network-security-config>

@@ -4,6 +4,14 @@
 **/build/
 app/release/
 
+# Signing & Credentials
+*.keystore
+*.jks
+*.p12
+*.pfx
+.env
+local.properties
+
 # Android Studio / IntelliJ
 /.idea/
 *.iml

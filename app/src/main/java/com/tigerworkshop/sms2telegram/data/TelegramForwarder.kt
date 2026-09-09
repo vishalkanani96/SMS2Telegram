@@ -8,6 +8,7 @@ import okhttp3.Request
 import java.io.IOException
 import java.util.concurrent.TimeUnit
 import org.json.JSONObject
+import android.util.Log
 
 class TelegramForwarder(
     private val client: OkHttpClient = defaultClient
@@ -35,6 +36,8 @@ class TelegramForwarder(
                 if (response.isSuccessful) {
                     Result.success(Unit)
                 } else {
+                    // Log without exposing sensitive data
+                    Log.w(TAG, "Telegram API error: ${response.code}")
                     Result.failure(
                         TelegramApiException(
                             statusCode = response.code,
@@ -44,6 +47,8 @@ class TelegramForwarder(
                 }
             }
         } catch (ioe: IOException) {
+            // Log without exposing sensitive data
+            Log.e(TAG, "Failed to send message to Telegram", ioe)
             Result.failure(ioe)
         }
     }
@@ -58,12 +63,14 @@ class TelegramForwarder(
         return@withContext try {
             client.newCall(request).execute().use { response ->
                 if (!response.isSuccessful) {
+                    Log.w(TAG, "Telegram API error: ${response.code}")
                     return@use Result.failure(IOException("Telegram API error ${response.code}"))
                 }
 
                 val bodyString = response.body?.string().orEmpty()
                 val json = JSONObject(bodyString)
                 if (!json.optBoolean("ok")) {
+                    Log.w(TAG, "Telegram API returned ok=false")
                     return@use Result.failure(IOException("Telegram API returned ok=false"))
                 }
                 val results = json.optJSONArray("result") ?: return@use Result.success(emptyList())
@@ -90,11 +97,13 @@ class TelegramForwarder(
                 Result.success(chats)
             }
         } catch (ioe: IOException) {
+            Log.e(TAG, "Failed to fetch updates from Telegram", ioe)
             Result.failure(ioe)
         }
     }
 
     companion object {
+        private const val TAG = "TelegramForwarder"
         private const val MAX_MESSAGE_LENGTH = 3900
 
         fun shouldRetry(throwable: Throwable?): Boolean {
