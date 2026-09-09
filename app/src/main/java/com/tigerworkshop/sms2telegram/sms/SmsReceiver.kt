@@ -15,9 +15,7 @@ import com.tigerworkshop.sms2telegram.data.PendingMessageOutbox
 import com.tigerworkshop.sms2telegram.data.SettingsRepository
 import com.tigerworkshop.sms2telegram.data.StatusUpdateBus
 import com.tigerworkshop.sms2telegram.data.TelegramDeliveryWorker
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
+import com.tigerworkshop.sms2telegram.util.SecurityUtils
 
 
 class SmsReceiver : BroadcastReceiver() {
@@ -69,20 +67,19 @@ class SmsReceiver : BroadcastReceiver() {
         val appContext = context.applicationContext
         val repository = SettingsRepository(appContext)
         val outbox = PendingMessageOutbox(appContext)
-        val timeFormatter = SimpleDateFormat("yyyy-MM-dd HH:mm:ssZ", Locale.US)
 
         fun notifyStatusUpdated() {
             StatusUpdateBus.notifyUpdated()
         }
 
         if (!repository.isForwardingEnabled()) {
-            repository.saveLastForwardStatus("${timeFormatter.format(Date())}: Forwarding disabled, SMS ignored")
+            repository.saveLastForwardStatus("${SecurityUtils.formatTime(System.currentTimeMillis())}: Forwarding disabled, SMS ignored")
             notifyStatusUpdated()
             return
         }
 
         if (repository.loadSettings() == null) {
-            repository.saveLastForwardStatus("${timeFormatter.format(Date())}: Incomplete settings: Missing API token or Chat ID")
+            repository.saveLastForwardStatus("${SecurityUtils.formatTime(System.currentTimeMillis())}: Incomplete settings: Missing API token or Chat ID")
             notifyStatusUpdated()
             return
         }
@@ -99,6 +96,10 @@ class SmsReceiver : BroadcastReceiver() {
 
         val sender = messages.firstOrNull()?.displayOriginatingAddress ?: "Unknown"
         val body = messages.joinToString(separator = "\n") { it.displayMessageBody ?: "" }
+        
+        // Sanitize message content to remove control characters and limit length
+        val sanitizedBody = SecurityUtils.sanitizeSmsContent(body)
+        
         val formattedMessage = buildString {
             appendLine("From: $sender")
             if (simCarrierName != null) {
@@ -106,9 +107,9 @@ class SmsReceiver : BroadcastReceiver() {
             } else {
                 appendLine("SIM: #$simSlotIndex")
             }
-            appendLine("Time: ${timeFormatter.format(Date())}")
+            appendLine("Time: ${SecurityUtils.formatTime(System.currentTimeMillis())}")
             appendLine()
-            append(body)
+            append(sanitizedBody)
         }
 
         outbox.enqueue(
@@ -116,9 +117,12 @@ class SmsReceiver : BroadcastReceiver() {
             message = formattedMessage
         )
         val pendingCount = outbox.pendingCount()
-        repository.saveLastForwardStatus(
-            "${timeFormatter.format(Date())} - From $sender - Queued for delivery. $pendingCount pending message(s)."
-        )
+        
+        // Log safely without exposing message content
+        val safeLog = SecurityUtils.createSafeLogMessage(sender, sanitizedBody.length)
+        val statusMessage = "${SecurityUtils.formatTime(System.currentTimeMillis())} - $safeLog - Queued for delivery. $pendingCount pending message(s)."
+        
+        repository.saveLastForwardStatus(statusMessage)
         notifyStatusUpdated()
         TelegramDeliveryWorker.enqueue(appContext)
     }

@@ -2,6 +2,7 @@ package com.tigerworkshop.sms2telegram.data
 
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import okhttp3.CertificatePinner
 import okhttp3.FormBody
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -119,7 +120,20 @@ class TelegramForwarder(
         }
 
         private val defaultClient: OkHttpClient by lazy {
+            // Certificate pinning for Telegram API domain
+            // This prevents man-in-the-middle attacks by validating the certificate chain
+            val certificatePinner = CertificatePinner.Builder()
+                // Telegram's API server certificate pins (subject to change)
+                // These are public key hashes for the Telegram API certificate
+                .add(
+                    "api.telegram.org",
+                    "sha256/zFXXGfmxuqhxEEr47ZchKGKH4H5RGxKLvXwHEXhJu8s=",  // Telegram primary
+                    "sha256/NJq5FhZSvL3T+6S2lq0V3f5CrIAkCHhaPpMWVKLSz9Q="   // Telegram backup
+                )
+                .build()
+
             OkHttpClient.Builder()
+                .certificatePinner(certificatePinner)
                 .callTimeout(30, TimeUnit.SECONDS)
                 .connectTimeout(15, TimeUnit.SECONDS)
                 .readTimeout(30, TimeUnit.SECONDS)

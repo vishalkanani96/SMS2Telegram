@@ -26,6 +26,8 @@ import com.tigerworkshop.sms2telegram.data.TelegramChatInfo
 import com.tigerworkshop.sms2telegram.data.TelegramDeliveryWorker
 import com.tigerworkshop.sms2telegram.data.TelegramForwarder
 import com.tigerworkshop.sms2telegram.databinding.ActivityMainBinding
+import com.tigerworkshop.sms2telegram.util.SecurityUtils
+import android.text.InputType
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -36,7 +38,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var settingsRepository: SettingsRepository
     private lateinit var pendingMessageOutbox: PendingMessageOutbox
     private val telegramForwarder = TelegramForwarder()
-    private val timeFormatter = SimpleDateFormat("yyyy-MM-dd HH:mm:ssZ", Locale.US)
+    private var tokenVisible = false  // Track if API token is visible
 
     private enum class WizardStep { STEP0_WELCOME, STEP1_CONFIG, STEP2_PERMISSION, STEP3_SUMMARY }
 
@@ -114,6 +116,9 @@ class MainActivity : AppCompatActivity() {
         updateLastStatus()
         observeStatusUpdates()
         initWizardInitialStep()
+
+        // Set token field as password (masked input)
+        binding.inputToken.inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
 
         binding.inputToken.doAfterTextChanged {
             val hasToken = !it.isNullOrBlank()
@@ -315,23 +320,23 @@ class MainActivity : AppCompatActivity() {
         val token = binding.inputToken.text?.toString()?.trim().orEmpty()
         val chatId = binding.inputChatId.text?.toString()?.trim().orEmpty()
 
-        var hasError = false
-
-        if (token.isBlank()) {
-            binding.inputLayoutToken.error = getString(R.string.hint_api_token)
-            hasError = true
+        // Validate token format
+        val tokenValidation = SecurityUtils.validateTelegramToken(token)
+        if (!tokenValidation.isValid) {
+            binding.inputLayoutToken.error = tokenValidation.errorMessage
         } else {
             binding.inputLayoutToken.error = null
         }
 
-        if (chatId.isBlank()) {
-            binding.inputLayoutChatId.error = getString(R.string.error_chat_id_required)
-            hasError = true
+        // Validate chat ID format
+        val chatIdValidation = SecurityUtils.validateChatId(chatId)
+        if (!chatIdValidation.isValid) {
+            binding.inputLayoutChatId.error = chatIdValidation.errorMessage
         } else {
             binding.inputLayoutChatId.error = null
         }
 
-        if (hasError) return
+        if (!tokenValidation.isValid || !chatIdValidation.isValid) return
 
         lifecycleScope.launch {
             binding.buttonValidateAndContinue.isEnabled = false
@@ -345,7 +350,7 @@ class MainActivity : AppCompatActivity() {
                 if (result.isSuccess) {
                     // Save settings only when validation passes
                     settingsRepository.saveSettings(token, chatId)
-                    val successText = timeFormatter.format(Date()) + " " + getString(R.string.test_message_success)
+                    val successText = SecurityUtils.formatTime(System.currentTimeMillis()) + " " + getString(R.string.test_message_success)
                     settingsRepository.saveLastForwardStatus(successText)
                     if (pendingMessageOutbox.pendingCount() > 0 && settingsRepository.isForwardingEnabled()) {
                         TelegramDeliveryWorker.enqueue(this@MainActivity)
@@ -367,7 +372,7 @@ class MainActivity : AppCompatActivity() {
                     }
                 } else {
                     val errorMessage = result.exceptionOrNull()?.localizedMessage ?: "unknown error"
-                    val errorText = timeFormatter.format(Date()) + " " + getString(
+                    val errorText = SecurityUtils.formatTime(System.currentTimeMillis()) + " " + getString(
                         R.string.test_message_error,
                         errorMessage
                     )
@@ -523,11 +528,11 @@ class MainActivity : AppCompatActivity() {
                 )
 
                 if (result.isSuccess) {
-                    val successText = timeFormatter.format(Date()) + " " + getString(R.string.test_message_success)
+                    val successText = SecurityUtils.formatTime(System.currentTimeMillis()) + " " + getString(R.string.test_message_success)
                     settingsRepository.saveLastForwardStatus(successText)
                     Toast.makeText(this@MainActivity, successText, Toast.LENGTH_SHORT).show()
                 } else {
-                    val errorText = timeFormatter.format(Date()) + " " + getString(
+                    val errorText = SecurityUtils.formatTime(System.currentTimeMillis()) + " " + getString(
                         R.string.test_message_error,
                         result.exceptionOrNull()?.localizedMessage ?: "unknown error"
                     )
@@ -562,7 +567,7 @@ class MainActivity : AppCompatActivity() {
         }
 
         settingsRepository.saveLastForwardStatus(
-            timeFormatter.format(Date()) + " " + getString(R.string.retry_pending_scheduled, pendingCount)
+            SecurityUtils.formatTime(System.currentTimeMillis()) + " " + getString(R.string.retry_pending_scheduled, pendingCount)
         )
         TelegramDeliveryWorker.enqueue(this)
         updateLastStatus()
@@ -581,7 +586,7 @@ class MainActivity : AppCompatActivity() {
                             R.string.pending_message_entry_title,
                             index + 1,
                             pendingMessage.sender,
-                            timeFormatter.format(Date(pendingMessage.queuedAtMillis))
+                            SecurityUtils.formatTime(pendingMessage.queuedAtMillis)
                         )
                     )
                     append(pendingMessage.message)

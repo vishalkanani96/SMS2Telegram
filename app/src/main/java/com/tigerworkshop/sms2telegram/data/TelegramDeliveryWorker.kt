@@ -9,9 +9,8 @@ import androidx.work.NetworkType
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
+import com.tigerworkshop.sms2telegram.util.SecurityUtils
+import kotlinx.coroutines.delay
 import java.util.concurrent.TimeUnit
 
 class TelegramDeliveryWorker(
@@ -22,7 +21,11 @@ class TelegramDeliveryWorker(
     private val settingsRepository = SettingsRepository(appContext)
     private val outbox = PendingMessageOutbox(appContext)
     private val telegramForwarder = TelegramForwarder()
-    private val timeFormatter = SimpleDateFormat("yyyy-MM-dd HH:mm:ssZ", Locale.US)
+
+    // Rate limiting: delay between message sends to avoid hitting Telegram API limits
+    private companion object {
+        private const val MESSAGE_SEND_DELAY_MS = 500L  // 500ms delay between sends
+    }
 
     override suspend fun doWork(): Result {
         val pendingCount = outbox.pendingCount()
@@ -48,6 +51,10 @@ class TelegramDeliveryWorker(
 
         while (true) {
             val pendingMessage = outbox.peekOldest() ?: break
+            
+            // Apply rate limiting to avoid hitting Telegram API limits
+            delay(MESSAGE_SEND_DELAY_MS)
+            
             val sendResult = telegramForwarder.sendMessage(
                 token = settings.apiToken,
                 chatId = settings.chatId,
@@ -92,7 +99,7 @@ class TelegramDeliveryWorker(
         StatusUpdateBus.notifyUpdated()
     }
 
-    private fun timestamp(): String = timeFormatter.format(Date())
+    private fun timestamp(): String = SecurityUtils.formatTime(System.currentTimeMillis())
 
     companion object {
         private const val UNIQUE_WORK_NAME = "telegram_delivery"
